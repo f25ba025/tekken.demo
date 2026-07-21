@@ -1,1 +1,700 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>スポットライトパレット - 管理者ダッシュボード</title>
+    <style>
+        :root {
+            --primary: #2b579a;
+            --primary-light: #eff4fc;
+            --success: #107c41;
+            --success-light: #e1f1e9;
+            --warning: #b75c00;
+            --warning-light: #fdf2e4;
+            --dark: #202124;
+            --sidebar-bg: #1f2937;
+            --gray-bg: #f8f9fa;
+            --border: #dadce0;
+            --accent: #d83b01;
+        }
 
+        * { box-sizing: border-box; font-family: 'Segoe UI', Meiryo, sans-serif; margin: 0; padding: 0; }
+        body { background-color: var(--gray-bg); color: var(--dark); display: flex; min-height: 100vh; overflow-x: hidden; }
+        
+        aside {
+            width: 260px;
+            background-color: var(--sidebar-bg);
+            color: #ecf0f1;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.15);
+        }
+        
+        .sidebar-brand {
+            padding: 24px 20px;
+            background: linear-gradient(135deg, #1f3a60, #2b579a);
+            text-align: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .sidebar-brand h1 { font-size: 18px; font-weight: bold; color: white; letter-spacing: 0.5px; }
+        .sidebar-brand p { font-size: 11px; opacity: 0.8; margin-top: 4px; }
+
+        .sidebar-menu { flex: 1; padding: 15px 0; list-style: none; }
+        .pc-nav-item {
+            padding: 14px 20px;
+            font-size: 13px;
+            color: #cbd5e1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s ease;
+            border-left: 4px solid transparent;
+        }
+        .pc-nav-item:hover { color: white; background: #374151; }
+        .pc-nav-item.active {
+            color: white;
+            background: #111827;
+            border-left: 4px solid var(--primary);
+            font-weight: bold;
+        }
+        
+        .sidebar-footer { padding: 15px 20px; font-size: 11px; color: #9ca3af; border-top: 1px solid rgba(255,255,255,0.1); background: #111827; }
+
+        main { flex: 1; margin-left: 260px; display: flex; flex-direction: column; min-height: 100vh; }
+        header { background: white; padding: 15px 30px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        header h2 { font-size: 16px; color: #5f6368; font-weight: 600; }
+        .pc-content { padding: 30px; flex: 1; }
+
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .grid-2 { display: grid; grid-template-columns: 2.2fr 1fr; gap: 25px; }
+
+        .factory-tabs { display: flex; gap: 5px; margin-bottom: 15px; border-bottom: 2px solid var(--border); }
+        .tab-btn { padding: 8px 16px; border: 1px solid var(--border); border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 13px; font-weight: bold; border-radius: 4px 4px 0 0; }
+        .tab-btn.active { background: white; border-bottom: 2px solid white; margin-bottom: -2px; color: var(--primary); }
+        .tab-add-btn { padding: 6px 12px; background: #6b7280; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; margin-bottom: 10px; display: inline-block; }
+
+        /* キャンバスラッパー */
+        .canvas-wrapper {
+            position: relative;
+            width: 100%;
+            height: 480px;
+            border: 2px dashed #ccc;
+            background-color: #f0f0f0;
+            background-size: 100% 100%;
+            background-repeat: no-repeat;
+            background-position: center center;
+            overflow: hidden;
+            user-select: none;
+        }
+        .canvas-wrapper.edit-mode { border-color: var(--accent); background-color: #fafafa; }
+        
+        /* 100%基準で乗せるSVGオーバーレイレイヤ */
+        .canvas-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* HTML要素として重ねる操作用ハンドルレイヤ */
+        .editor-area-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        .area-interactor {
+            position: absolute;
+            pointer-events: auto;
+            box-sizing: border-box;
+            border: 2px dashed transparent;
+            cursor: pointer;
+        }
+        .area-interactor.edit-active {
+            border: 2px solid #00ff00;
+            box-shadow: 0 0 8px #00ff00;
+        }
+        .area-interactor.mode-edit {
+            cursor: move;
+        }
+
+        /* リサイズハンドル */
+        .resize-handle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #000;
+            border: 1px solid #fff;
+            right: -5px;
+            bottom: -5px;
+            cursor: se-resize;
+            z-index: 5;
+            display: none;
+        }
+        .area-interactor.edit-active .resize-handle {
+            display: block;
+        }
+
+        .ranking-table { width: 100%; border-collapse: collapse; background: white; }
+        .ranking-table th, .ranking-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .ranking-table th { background: #f8f9fa; font-weight: bold; color: #5f6368; }
+
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 6px; font-size: 12px; color: #5f6368; }
+        .form-control { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+        .btn { display: inline-block; padding: 10px 16px; background: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; text-align: center; width: 100%; font-weight: bold; }
+        .btn-danger { background: var(--accent); }
+        .btn-secondary { background: #6c757d; }
+        
+        .chat-space { border: 1px solid var(--border); border-radius: 6px; background: #f1f3f4; padding: 15px; height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .chat-msg { background: white; border-left: 4px solid var(--primary); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; }
+        
+        .app-page { display: none; }
+        .app-page.active { display: block; }
+    </style>
+</head>
+<body>
+
+    <aside>
+        <div class="sidebar-brand">
+            <h1>スポットライトパレット</h1>
+            <p>5S活動推進事務局ポータル</p>
+        </div>
+        <ul class="sidebar-menu">
+            <li class="pc-nav-item active" id="t-pc-area" onclick="switchPcPage('area')">📍 リアルタイム状況マップ</li>
+            <li class="pc-nav-item" id="t-pc-rank" onclick="switchPcPage('rank')">🏆 個人スコア・通知ログ</li>
+            <li class="pc-nav-item" id="t-pc-schedule" onclick="switchPcPage('schedule')">📅 当番スケジュール設定</li>
+            <li class="pc-nav-item" id="t-pc-setting" onclick="switchPcPage('setting')">⚙️ Google Chat通知設定</li>
+            <li class="pc-nav-item" id="t-pc-account" onclick="switchPcPage('account')">👤 管理アカウント情報</li>
+        </ul>
+        <div class="sidebar-footer">同期状態: リアルタイム連携中</div>
+    </aside>
+
+    <main>
+        <header>
+            <h2 id="page-title">📍 リアルタイム状況マップ</h2>
+            <div style="font-size: 13px; color: #5f6368;">下層画像レイヤ・ファイルアップロード機能ON</div>
+        </header>
+
+        <div id="p-pc-area" class="pc-content app-page active">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <div class="factory-tabs" id="factory-tabs-container"></div>
+                <div>
+                    <button class="btn" id="mode-toggle-btn" style="width:auto; padding:8px 20px;" onclick="toggleEditMode()">🛠️ マップ編集モードに切り替える</button>
+                </div>
+            </div>
+
+            <div id="edit-controls" style="display:none; margin-bottom:12px; background: #fff3cd; padding: 15px; border-radius: 6px; border:1px solid #ffeeba;">
+                <button class="tab-add-btn" onclick="addNewFactory()">＋ 大枠のエリア（工場）を新規追加</button>
+                
+                <label class="tab-add-btn btn-secondary" style="margin-left:10px; cursor:pointer;">
+                    🖼️ この大枠の背景画像をファイル選択してアップロード
+                    <input type="file" id="factory-image-uploader" accept="image/*" style="display:none;" onchange="handleImageUpload(this)">
+                </label>
+                
+                <button class="tab-add-btn btn-danger" style="margin-left:10px;" onclick="deleteCurrentFactory()">✖ この大枠を削除</button>
+                <div style="font-size:11px; margin-top:8px; color:var(--dark);">【操作方法】画像上の白地をドラッグすると新しい清掃枠（四角）が作れます。枠を選択後、ドラッグで移動、右下の■ハンドルをドラッグしてサイズ変更、[Delete]キーで削除可能。※将来的な多角形拡張（Polygon）対応のデータ構造で保存されます。</div>
+            </div>
+
+            <div class="grid-2">
+                <div>
+                    <div class="card" style="padding: 12px;">
+                        <div class="canvas-wrapper" id="map-canvas">
+                            <svg class="canvas-svg" id="map-svg-layer"></svg>
+                            <div class="editor-area-container" id="interactor-container"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <div class="card" id="view-side-card">
+                        <h3 style="margin-bottom:12px; color:var(--primary); font-size:14px;">現在の登録エリア状況</h3>
+                        <p style="font-size:12px; color:#666; margin-bottom:12px;">大枠（工場）を切り替えると、アップロードされたそれぞれの図面と清掃枠が表示されます。</p>
+                        <ul id="pc-area-list-view" style="font-size:13px; list-style:none; line-height:26px;"></ul>
+                    </div>
+
+                    <div class="card" id="edit-side-card" style="display:none; border-color:var(--accent);">
+                        <h3 style="margin-bottom:12px; color:var(--accent); font-size:14px;">⚙️ エリア枠プロパティ編集</h3>
+                        <p style="color:#666; font-size:12px; margin-bottom:10px;" id="no-select-hint">図面上のエリア枠をクリックして選択してください。</p>
+                        <div id="property-form" style="display:none;">
+                            <div class="form-group">
+                                <label>エリア名称</label>
+                                <input type="text" id="prop-name" class="form-control" oninput="updateAreaName(this.value)">
+                            </div>
+                            <div class="form-group">
+                                <label>現在の5S状況</label>
+                                <select id="prop-status" class="form-control" onchange="updateAreaStatus(this.value)">
+                                    <option value="not-cleaned">未清掃（橙半透明）</option>
+                                    <option value="cleaned">完了（緑半透明）</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-danger" onclick="deleteSelectedArea()">選択中のエリア枠を削除</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="p-pc-rank" class="pc-content app-page">
+            <div class="grid-2">
+                <div>
+                    <div class="card">
+                        <h3 style="margin-bottom:15px; color:var(--primary); font-size:15px;">🏆 5S活動 個人スコア自動集計</h3>
+                        <table class="ranking-table" id="rank-table" style="border: 1px solid var(--border);">
+                            <thead><tr><th>順位</th><th>氏名</th><th>合計スコア</th><th>当番完了回数</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div>
+                    <div class="card">
+                        <h3 style="color:var(--primary); font-size:14px; margin-bottom:15px;">🔔 リアルタイム同期・通知ストリーム</h3>
+                        <div class="chat-space" id="pc-chat-space"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="p-pc-schedule" class="pc-content app-page">
+            <div class="card">
+                <h3 style="margin-bottom:15px; color:var(--primary); font-size:15px;">📅 エリア別・曜日別掃除当番設定マスター</h3>
+                <table class="ranking-table" style="border: 1px solid var(--border);">
+                    <thead><tr><th>対象エリア（大枠）</th><th>月曜日</th><th>火曜日</th><th>水曜日</th><th>木曜日</th><th>金曜日</th></tr></thead>
+                    <tbody id="schedule-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="p-pc-setting" class="pc-content app-page">
+            <div class="card" style="max-width:600px;">
+                <h3 style="margin-bottom:15px; color:var(--warning); font-size:15px;">⚙️ Google Chat 自動リマインド連携</h3>
+                <div class="form-group"><label>自動通知リマインドタイミング</label><select class="form-control"><option>当日 朝 07:45</option></select></div>
+                <div class="form-group"><label>Google Chat Webhook URL</label><input type="text" class="form-control" value="https://chat.googleapis.com/v1/spaces/..." readonly></div>
+            </div>
+        </div>
+
+        <div id="p-pc-account" class="pc-content app-page">
+            <div class="card" style="max-width:500px;">
+                <h3 style="margin-bottom:12px; font-size:15px;">👤 管理者アカウント</h3>
+                <p style="font-size:13px; color:#5f6368;"><strong>アカウント:</strong> 5s-admin@company.com<br><strong>権限 scope:</strong> Google Spreadsheet / Google Chat</p>
+            </div>
+        </div>
+    </main>
+
+<script>
+    const defaultData = {
+        factories: [
+            { id: "fac1", name: "第一工場", image: "" },
+            { id: "fac2", name: "第二工場", image: "" }
+        ],
+        users: [
+            { id: "u1", name: "佐藤 拓海", team: "F班", score: 1450, count: 4 },
+            { id: "u2", name: "高橋 美咲", team: "A班", score: 2100, count: 7 },
+            { id: "u3", name: "鈴木 一真", team: "B班", score: 1350, count: 4 }
+        ],
+        // 各座標情報は100%に対する割合値（パーセンテージ）で管理
+        areas: [
+            { id: "room1", factoryId: "fac1", name: "休憩室A", type: "rect", x: 10, y: 10, w: 30, h: 25, points: [], status: "not-cleaned" }
+        ],
+        schedules: { "room1": { "Mon": "u1", "Tue": "u2", "Wed": "u3", "Thu": "u1", "Fri": "u2" } },
+        logs: [{ time: "12:30", msg: "システムが正常に起動しました。画像をアップロードしてください。" }]
+    };
+
+    let appData = {};
+    let currentFactoryId = "fac1";
+    let selectedAreaId = null;
+    let isEditMode = false;
+    let isDrawing = false;
+    let startXPercent, startYPercent, activeDrawingSvg = null;
+
+    function init() {
+        const stored = localStorage.getItem('spotlight_palette_file_sync');
+        if (stored) { appData = JSON.parse(stored); } else { appData = defaultData; saveToStorage(); }
+        renderTabs(); renderCanvas(); renderAreaListView(); renderScheduleTable(); renderRankingsAndLogs(); setupCanvasDrawing();
+    }
+
+    function saveToStorage() { localStorage.setItem('spotlight_palette_file_sync', JSON.stringify(appData)); }
+
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'spotlight_palette_file_sync') {
+            appData = JSON.parse(e.newValue);
+            renderCanvas(); renderAreaListView(); renderScheduleTable(); renderRankingsAndLogs();
+        }
+    });
+
+    function switchPcPage(pageId) {
+        document.querySelectorAll('.pc-content').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.pc-nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById('p-pc-' + pageId).classList.add('active');
+        const activeNav = document.getElementById('t-pc-' + pageId);
+        activeNav.classList.add('active');
+        document.getElementById('page-title').innerText = activeNav.innerText;
+    }
+
+    function toggleEditMode() {
+        isEditMode = !isEditMode;
+        const btn = document.getElementById('mode-toggle-btn');
+        const editControls = document.getElementById('edit-controls');
+        const canvas = document.getElementById('map-canvas');
+        document.getElementById('view-side-card').style.display = isEditMode ? "none" : "block";
+        document.getElementById('edit-side-card').style.display = isEditMode ? "block" : "none";
+        
+        if (isEditMode) {
+            btn.innerText = "👁️ 通常閲覧モードに戻す"; btn.className = "btn btn-secondary"; editControls.style.display = "block"; canvas.classList.add('edit-mode');
+        } else {
+            btn.innerText = "🛠️ マップ編集モードに切り替える"; btn.className = "btn"; editControls.style.display = "none"; canvas.classList.remove('edit-mode'); selectedAreaId = null;
+        }
+        renderCanvas();
+    }
+
+    function handleImageUpload(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const base64Image = e.target.result;
+            const factory = appData.factories.find(f => f.id === currentFactoryId);
+            if (factory) {
+                factory.image = base64Image;
+                saveToStorage();
+                renderCanvas();
+                alert("背景画像のアップロードと登録が完了しました！");
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function renderCanvas() {
+        const canvas = document.getElementById('map-canvas');
+        const svgLayer = document.getElementById('map-svg-layer');
+        const interactorContainer = document.getElementById('interactor-container');
+        
+        svgLayer.innerHTML = '';
+        interactorContainer.innerHTML = '';
+        
+        const currentFac = appData.factories.find(f => f.id === currentFactoryId);
+        if (currentFac && currentFac.image) {
+            canvas.style.backgroundImage = `url('${currentFac.image}')`;
+        } else {
+            canvas.style.backgroundImage = "none";
+        }
+
+        const filtered = appData.areas.filter(a => a.factoryId === currentFactoryId);
+        filtered.forEach(area => {
+            // 1. SVG描画用要素 (実体)
+            let shape;
+            if (area.type === "polygon" && area.points && area.points.length > 0) {
+                shape = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                const pointsAttr = area.points.map(p => `${p.x}%,${p.y}%`).join(" ");
+                shape.setAttribute("points", pointsAttr);
+            } else {
+                shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                shape.setAttribute("x", area.x + "%");
+                shape.setAttribute("y", area.y + "%");
+                shape.setAttribute("width", area.w + "%");
+                shape.setAttribute("height", area.h + "%");
+            }
+
+            // スタイリング
+            const isCleaned = area.status === 'cleaned';
+            shape.setAttribute("fill", isCleaned ? "rgba(16, 124, 65, 0.35)" : "rgba(216, 59, 1, 0.35)");
+            shape.setAttribute("stroke", isCleaned ? "var(--success)" : "var(--accent)");
+            shape.setAttribute("stroke-width", area.id === selectedAreaId ? "3" : "1.5");
+            svgLayer.appendChild(shape);
+
+            // テキスト表示
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            const textX = area.x + (area.w / 2);
+            const textY = area.y + (area.h / 2);
+            text.setAttribute("x", textX + "%");
+            text.setAttribute("y", textY + "%");
+            text.setAttribute("text-anchor", "middle");
+            text.setAttribute("dominant-baseline", "central");
+            text.setAttribute("font-size", "11px");
+            text.setAttribute("font-weight", "bold");
+            text.setAttribute("fill", "#000");
+            text.textContent = area.name;
+            svgLayer.appendChild(text);
+
+            // 2. HTMLレイヤー上のドラッグ・リサイズ用インタラクター
+            const interactor = document.createElement('div');
+            interactor.className = `area-interactor ${isEditMode ? 'mode-edit' : ''} ${area.id === selectedAreaId ? 'edit-active' : ''}`;
+            interactor.style.left = area.x + '%';
+            interactor.style.top = area.y + '%';
+            interactor.style.width = area.w + '%';
+            interactor.style.height = area.h + '%';
+
+            // リサイズ用のハンドル
+            if (isEditMode) {
+                const handle = document.createElement('div');
+                handle.className = 'resize-handle';
+                handle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    initResize(e, area);
+                });
+                interactor.appendChild(handle);
+            }
+
+            // マウスクリック・ドラッグ追従処理
+            interactor.addEventListener('mousedown', (e) => {
+                if (!isEditMode) return;
+                e.stopPropagation();
+                selectArea(area.id);
+                initDragMove(e, area);
+            });
+
+            interactorContainer.appendChild(interactor);
+        });
+    }
+
+    function renderTabs() {
+        const container = document.getElementById('factory-tabs-container');
+        container.innerHTML = '';
+        appData.factories.forEach(f => {
+            const btn = document.createElement('button');
+            btn.className = `tab-btn ${f.id === currentFactoryId ? 'active' : ''}`;
+            btn.innerText = f.name;
+            btn.onclick = () => {
+                currentFactoryId = f.id; selectedAreaId = null;
+                document.getElementById('property-form').style.display = 'none';
+                document.getElementById('no-select-hint').style.display = 'block';
+                renderTabs(); renderCanvas(); renderAreaListView();
+            };
+            container.appendChild(btn);
+        });
+    }
+
+    function addNewFactory() {
+        const name = prompt("追加する新しい大枠エリアの名前を入力：", "第三工場");
+        if (!name) return;
+        const id = "fac_" + Date.now();
+        appData.factories.push({ id: id, name: name, image: "" });
+        currentFactoryId = id; saveToStorage(); renderTabs(); renderCanvas();
+    }
+
+    function deleteCurrentFactory() {
+        if (appData.factories.length <= 1) return alert("これ以上削除できません。");
+        if (!confirm("この大枠と、含まれる清掃区画をすべて削除しますか？")) return;
+        appData.areas = appData.areas.filter(a => a.factoryId !== currentFactoryId);
+        appData.factories = appData.factories.filter(f => f.id !== currentFactoryId);
+        currentFactoryId = appData.factories[0].id; selectedAreaId = null;
+        saveToStorage(); renderTabs(); renderCanvas(); renderAreaListView(); renderScheduleTable();
+    }
+
+    // 新規エリア（四角）ドラッグ＆ドロップ作成
+    function setupCanvasDrawing() {
+        const canvas = document.getElementById('map-canvas');
+        
+        canvas.addEventListener('mousedown', (e) => {
+            if (!isEditMode || e.target !== canvas && e.target.id !== 'map-svg-layer') return;
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            startXPercent = ((e.clientX - rect.left) / rect.width) * 100;
+            startYPercent = ((e.clientY - rect.top) / rect.height) * 100;
+            
+            activeDrawingSvg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            activeDrawingSvg.setAttribute("fill", "rgba(216, 59, 1, 0.35)");
+            activeDrawingSvg.setAttribute("stroke", "var(--accent)");
+            activeDrawingSvg.setAttribute("stroke-dasharray", "4");
+            activeDrawingSvg.setAttribute("x", startXPercent + "%");
+            activeDrawingSvg.setAttribute("y", startYPercent + "%");
+            document.getElementById('map-svg-layer').appendChild(activeDrawingSvg);
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            const rect = canvas.getBoundingClientRect();
+            const currentXPercent = Math.max(0, Math.min(((e.clientX - rect.left) / rect.width) * 100, 100));
+            const currentYPercent = Math.max(0, Math.min(((e.clientY - rect.top) / rect.height) * 100, 100));
+            
+            const x = Math.min(startXPercent, currentXPercent);
+            const y = Math.min(startYPercent, currentYPercent);
+            const w = Math.abs(startXPercent - currentXPercent);
+            const h = Math.abs(startYPercent - currentYPercent);
+            
+            activeDrawingSvg.setAttribute("x", x + "%");
+            activeDrawingSvg.setAttribute("y", y + "%");
+            activeDrawingSvg.setAttribute("width", w + "%");
+            activeDrawingSvg.setAttribute("height", h + "%");
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            const x = parseFloat(activeDrawingSvg.getAttribute("x"));
+            const y = parseFloat(activeDrawingSvg.getAttribute("y"));
+            const w = parseFloat(activeDrawingSvg.getAttribute("width")) || 0;
+            const h = parseFloat(activeDrawingSvg.getAttribute("height")) || 0;
+            
+            if (w > 2 && h > 2) {
+                const newId = "room_" + Date.now();
+                const newName = prompt("エリア名称：", "新規清掃区画");
+                if (newName) {
+                    appData.areas.push({
+                        id: newId,
+                        factoryId: currentFactoryId,
+                        name: newName,
+                        type: "rect",
+                        x: x, y: y, w: w, h: h,
+                        points: [],
+                        status: "not-cleaned"
+                    });
+                    appData.schedules[newId] = { Mon: "", Tue: "", Wed: "", Thu: "", Fri: "" };
+                    saveToStorage();
+                    selectArea(newId);
+                }
+            }
+            if (activeDrawingSvg) activeDrawingSvg.remove();
+            activeDrawingSvg = null;
+            renderCanvas(); renderAreaListView(); renderScheduleTable();
+        });
+    }
+
+    // ドラッグ移動 (マウスカーソル位置に滑らかに追従)
+    function initDragMove(e, area) {
+        const canvas = document.getElementById('map-canvas');
+        const rect = canvas.getBoundingClientRect();
+        
+        // ドラッグ開始時の％換算マウス位置
+        const startMouseXPercent = ((e.clientX - rect.left) / rect.width) * 100;
+        const startMouseYPercent = ((e.clientY - rect.top) / rect.height) * 100;
+        
+        const startAreaX = area.x;
+        const startAreaY = area.y;
+
+        function onMouseMove(mEvent) {
+            const currentMouseXPercent = ((mEvent.clientX - rect.left) / rect.width) * 100;
+            const currentMouseYPercent = ((mEvent.clientY - rect.top) / rect.height) * 100;
+            
+            const diffX = currentMouseXPercent - startMouseXPercent;
+            const diffY = currentMouseYPercent - startMouseYPercent;
+            
+            area.x = Math.max(0, Math.min(startAreaX + diffX, 100 - area.w));
+            area.y = Math.max(0, Math.min(startAreaY + diffY, 100 - area.h));
+            
+            renderCanvas();
+        }
+
+        function onMouseUp() {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+            saveToStorage();
+            renderCanvas();
+        }
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+    }
+
+    // リサイズ処理 (右下つまみドラッグ)
+    function initResize(e, area) {
+        const canvas = document.getElementById('map-canvas');
+        const rect = canvas.getBoundingClientRect();
+        
+        const startMouseXPercent = ((e.clientX - rect.left) / rect.width) * 100;
+        const startMouseYPercent = ((e.clientY - rect.top) / rect.height) * 100;
+        
+        const startW = area.w;
+        const startH = area.h;
+
+        function onMouseMove(mEvent) {
+            const currentMouseXPercent = ((mEvent.clientX - rect.left) / rect.width) * 100;
+            const currentMouseYPercent = ((mEvent.clientY - rect.top) / rect.height) * 100;
+            
+            const diffW = currentMouseXPercent - startMouseXPercent;
+            const diffH = currentMouseYPercent - startMouseYPercent;
+            
+            area.w = Math.max(2, Math.min(startW + diffW, 100 - area.x));
+            area.h = Math.max(2, Math.min(startH + diffH, 100 - area.y));
+            
+            renderCanvas();
+        }
+
+        function onMouseUp() {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+            saveToStorage();
+            renderCanvas();
+        }
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+    }
+
+    window.addEventListener('keydown', (e) => {
+        if (!isEditMode || !selectedAreaId) return;
+        if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
+        if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelectedArea(); e.preventDefault(); }
+    });
+
+    function selectArea(id) {
+        selectedAreaId = id; const area = appData.areas.find(a => a.id === id); if (!area) return;
+        document.getElementById('no-select-hint').style.display = 'none'; document.getElementById('property-form').style.display = 'block';
+        document.getElementById('prop-name').value = area.name; document.getElementById('prop-status').value = area.status; renderCanvas();
+    }
+
+    function updateAreaName(val) { if (selectedAreaId) { appData.areas.find(a => a.id === selectedAreaId).name = val; saveToStorage(); renderCanvas(); renderAreaListView(); renderScheduleTable(); } }
+    function updateAreaStatus(val) { if (selectedAreaId) { appData.areas.find(a => a.id === selectedAreaId).status = val; saveToStorage(); renderCanvas(); renderAreaListView(); } }
+    
+    function deleteSelectedArea() {
+        if (!selectedAreaId || !confirm("削除しますか？")) return;
+        appData.areas = appData.areas.filter(a => a.id !== selectedAreaId); delete appData.schedules[selectedAreaId];
+        selectedAreaId = null; document.getElementById('property-form').style.display = 'none'; document.getElementById('no-select-hint').style.display = 'block';
+        saveToStorage(); renderCanvas(); renderAreaListView(); renderScheduleTable();
+    }
+
+    function renderAreaListView() {
+        const ul = document.getElementById('pc-area-list-view'); ul.innerHTML = '';
+        const filtered = appData.areas.filter(a => a.factoryId === currentFactoryId);
+        if (filtered.length === 0) { ul.innerHTML = "<li style='color:#999; font-size:12px;'>登録エリアはありません。</li>"; return; }
+        filtered.forEach(area => { const li = document.createElement('li'); li.innerHTML = `・${area.name} (${area.status === 'cleaned' ? '<span style="color:green;">🟢完了</span>' : '<span style="color:orange;">🔴未清掃</span>'})`; ul.appendChild(li); });
+    }
+
+    function renderScheduleTable() {
+        const tbody = document.getElementById('schedule-table-body'); tbody.innerHTML = '';
+        appData.areas.forEach(area => {
+            const fac = appData.factories.find(f => f.id === area.factoryId);
+            const tr = document.createElement('tr');
+            const tdLabel = document.createElement('td'); tdLabel.innerHTML = `<strong>${area.name}</strong> <span style="font-size:11px; color:#777;">(${fac?fac.name:"?"})</span>`; tr.appendChild(tdLabel);
+            ["Mon", "Tue", "Wed", "Thu", "Fri"].forEach(day => {
+                const td = document.createElement('td'); const select = document.createElement('select'); select.className = 'form-control';
+                const optEmpty = document.createElement('option'); optEmpty.value = ""; optEmpty.innerText = "- 未設定 -"; select.appendChild(optEmpty);
+                appData.users.forEach(u => { const opt = document.createElement('option'); opt.value = u.id; opt.innerText = u.name; if (appData.schedules[area.id] && appData.schedules[area.id][day] === u.id) opt.selected = true; select.appendChild(opt); });
+                select.onchange = (e) => { if (!appData.schedules[area.id]) appData.schedules[area.id] = {}; appData.schedules[area.id][day] = e.target.value; saveToStorage(); };
+                td.appendChild(select); tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderRankingsAndLogs() {
+        const tbody = document.querySelector('#rank-table tbody'); tbody.innerHTML = '';
+        [...appData.users].sort((a, b) => b.score - a.score).forEach((u, i) => {
+            const tr = document.createElement('tr'); tr.innerHTML = `<td>${i+1}</td><td>${u.name}</td><td>${u.score.toLocaleString()} pt</td><td>${u.count}回</td>`; tbody.appendChild(tr);
+        });
+        const chatSpace = document.getElementById('pc-chat-space'); chatSpace.innerHTML = '';
+        [...appData.logs].reverse().forEach(log => {
+            const msg = document.createElement('div'); msg.className = 'chat-msg'; msg.innerHTML = `<strong>[同期通信]</strong> <span style="color:#5f6368; font-size:11px;">${log.time}</span><br>${log.msg}`; chatSpace.appendChild(msg);
+        });
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>
